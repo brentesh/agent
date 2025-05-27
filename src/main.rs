@@ -30,7 +30,7 @@ struct AgentApp {
     //prompts
     prompt: String,
     pub gpt_responses: Arc<Mutex<Vec<String>>>,
-    is_working: bool,
+    is_working: Arc<Mutex<bool>>,
 }
 
 impl Default for AgentApp {
@@ -45,7 +45,7 @@ impl Default for AgentApp {
             config,
             prompt: String::new(),
             gpt_responses: Arc::new(Mutex::new(vec![])),
-            is_working: false,
+            is_working: Arc::new(Mutex::new(false)),
         }
     }
 }
@@ -136,9 +136,11 @@ impl AgentApp {
                     let prompt = self.prompt.clone();
                     // Spawn the async task in a background thread
                     let config: AppConfig = self.config.clone();
-                    self.is_working = true;
-                    let is_working_ptr = Arc::new(Mutex::new(self.is_working));
-                    let is_working_clone = is_working_ptr.clone();
+                    {
+                        let mut is_working = self.is_working.lock().unwrap();
+                        *is_working = true;
+                    }
+                    let is_working_clone = self.is_working.clone();
                     let gpt_responses_clone = self.gpt_responses.clone();
                     std::thread::spawn(move || {
                         execute_prompt(config, prompt, gpt_responses_clone);
@@ -146,13 +148,13 @@ impl AgentApp {
                         *is_working = false;
                     });
                 }
-                if self.is_working {
+                if *self.is_working.lock().unwrap() {
                     ui.label("Working...");
                 }
             });
             ui.add_space(16.0);
             if let Ok(response_lock) = self.gpt_responses.lock() {
-                for response in response_lock.iter() {
+                for response in response_lock.iter().rev() {
                     ui.label(response);
                 }
             }
