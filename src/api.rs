@@ -13,8 +13,6 @@ pub struct PYTMDET {
     pub autoid: String,
 }
 
-const EBMS_API_URL: &'static str =
-    "https://ecc652062001111502.servicebus.windows.net/MyEbms/ECC/OData";
 pub async fn set_pay_type(
     config: &AppConfig,
     date: NaiveDate,
@@ -27,7 +25,7 @@ pub async fn set_pay_type(
 
     let url = format!(
         "{}/TimeDetailManager(c2e90ee5-3e20-473c-9b2c-979a6a2ce6e2)/Model.Entities.ModifyTimeEntries",
-        EBMS_API_URL
+        config.ebms_url
     );
     println!("PATCH {}\n{}", url, body);
 
@@ -59,7 +57,7 @@ async fn get_pytmdet_autoid(
     let client = reqwest::Client::new();
     let url = format!(
         "{}/PYTMDET?$filter=ID eq '{}' and DATE eq {}T00:00:00Z&$select=AUTOID",
-        EBMS_API_URL, config.employee_id, date_str
+        config.ebms_url, config.employee_id, date_str
     );
     let res = client
         .get(&url)

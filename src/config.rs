@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct AppConfig {
     pub gpt_api_key: String,
+    pub ebms_url: String,
     pub ebms_username: String,
     pub ebms_password: String,
     pub employee_id: String,
@@ -12,6 +13,7 @@ impl AppConfig {
     pub fn empty() -> Self {
         AppConfig {
             gpt_api_key: String::new(),
+            ebms_url: String::new(),
             ebms_username: String::new(),
             ebms_password: String::new(),
             employee_id: String::new(),

@@ -24,6 +24,7 @@ struct AgentApp {
     pub config: AppConfig,
 
     // Login form fields
+    ebms_url: String,
     username: String,
     password: String,
     employee_id: String,
@@ -42,6 +43,7 @@ impl Default for AgentApp {
     fn default() -> Self {
         let config = load_config();
         Self {
+            ebms_url: config.ebms_url.clone(),
             username: config.ebms_username.clone(),
             password: config.ebms_password.clone(),
             employee_id: config.employee_id.clone(),
@@ -77,6 +79,15 @@ impl AgentApp {
                     .striped(true)
                     .min_col_width(120.0)
                     .show(ui, |ui| {
+                        ui.label("EBMS API URL:");
+                        ui.add_sized(
+                            [300.0, 24.0],
+                            egui::TextEdit::singleline(&mut self.ebms_url).hint_text(
+                                "https://ecc[SERIAL NO].servicebus.windows.net/MyEbms/ECC/OData",
+                            ),
+                        );
+                        ui.end_row();
+
                         ui.label("Username:");
                         ui.add_sized(
                             [300.0, 24.0],
@@ -121,6 +132,7 @@ impl AgentApp {
                     self.is_logged_in = true;
 
                     self.config = AppConfig {
+                        ebms_url: self.ebms_url.clone(),
                         ebms_username: self.username.clone(),
                         ebms_password: self.password.clone(),
                         employee_id: self.employee_id.clone(),
