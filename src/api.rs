@@ -1,4 +1,4 @@
-use super::AppConfig;
+use super::{AppConfig, PayType};
 use chrono::NaiveDate;
 use serde::Deserialize;
 
@@ -15,11 +15,11 @@ pub struct PYTMDET {
 
 pub async fn set_pay_type(
     config: &AppConfig,
-    date: NaiveDate,
-    pay_type: &str,
+    date: &NaiveDate,
+    pay_type: &PayType,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let pay_code =
-        format_pay_code(pay_type).ok_or_else(|| format!("Invalid pay type: {}", pay_type))?;
+    let pay_code = format_pay_code(pay_type)
+        .ok_or_else(|| format!("Invalid pay type: {}", pay_type.to_string()))?;
     let pytmdet_autoid = get_pytmdet_autoid(config, date).await?;
     let body = get_body(&pytmdet_autoid, pay_code);
 
@@ -51,7 +51,7 @@ pub async fn set_pay_type(
 
 async fn get_pytmdet_autoid(
     config: &AppConfig,
-    date: NaiveDate,
+    date: &NaiveDate,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let date_str = date.format("%Y-%m-%d").to_string();
     let client = reqwest::Client::new();
@@ -88,15 +88,16 @@ async fn get_pytmdet_autoid(
     Ok(autoid.clone())
 }
 
-fn format_pay_code(name: &str) -> Option<&'static str> {
-    match name.to_lowercase().as_str() {
-        "sick" => Some("Vac-SAL"),
-        "vacation" => Some("Vac-SAL"),
-        "holiday" => Some("Hol-SAL"),
-        "salary" => Some("Salary"),
-        _ => None,
+fn format_pay_code(pay_type: &PayType) -> Option<&'static str> {
+    match pay_type {
+        PayType::Sick => Some("Vac-SAL"),
+        PayType::Vacation => Some("Vac-SAL"),
+        PayType::Holiday => Some("Hol-SAL"),
+        PayType::Salary => Some("Salary"),
+        PayType::Parental => Some("Par-SAL"),
     }
 }
+
 fn get_body(autoid: &str, pay_type: &str) -> serde_json::Value {
     serde_json::json!({
         "ModifyEntries": [

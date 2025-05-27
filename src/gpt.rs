@@ -1,7 +1,10 @@
+use crate::PayType;
+
 use super::{ConversationMessage, Role};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
+use strum::IntoEnumIterator;
 
 impl Role {
     fn as_str(&self) -> &'static str {
@@ -121,8 +124,8 @@ fn get_functions_metadata() -> Vec<serde_json::Value> {
                 },
                 "pay_type": {
                     "type": "string",
-                    "enum": ["Sick", "Vacation", "Holiday", "Salary"],
-                    "description": "One of: Sick, Vacation, Holiday, or Salary, Salary by default"
+                    "enum": PayType::iter().map(|pt| pt.to_string()).collect::<Vec<_>>(),
+                    "description": "One of: Sick, Vacation, Holiday, Parental, or Salary, Salary by default"
                 }
             },
             "required": ["date", "pay_type"]

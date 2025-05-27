@@ -2,7 +2,7 @@ use agent::{
     ConversationMessage, Role,
     config::{AppConfig, load_config, save_config},
 };
-use eframe::egui::{self, Id};
+use eframe::egui::{self, Id, RichText};
 use std::sync::{Arc, Mutex};
 
 fn main() {
@@ -34,7 +34,7 @@ struct AgentApp {
     //main screen
     focused: bool,
     prompt: String,
-    pub output: Arc<Mutex<Vec<String>>>,
+    pub output: Arc<Mutex<Vec<RichText>>>,
     current_conversation: Arc<Mutex<Vec<ConversationMessage>>>,
     is_working: Arc<Mutex<bool>>,
 }
@@ -178,14 +178,14 @@ impl AgentApp {
                     });
                     self.prompt.clear();
                 }
-                if *self.is_working.lock().unwrap() {
-                    ui.label("Working...");
-                }
             });
             ui.add_space(16.0);
-            if let Ok(response_lock) = self.output.lock() {
-                for response in response_lock.iter().rev() {
-                    ui.label(response);
+            if *self.is_working.lock().unwrap() {
+                ui.label(egui::RichText::new("Working...").italics());
+            }
+            if let Ok(output_lock) = self.output.lock() {
+                for rich_text in output_lock.iter().rev() {
+                    ui.label(rich_text.clone());
                 }
             }
             ui.with_layout(egui::Layout::bottom_up(egui::Align::RIGHT), |ui| {
@@ -209,7 +209,7 @@ impl AgentApp {
 fn execute_prompt(
     config: AppConfig,
     prompt: String,
-    output: Arc<Mutex<Vec<String>>>,
+    output: Arc<Mutex<Vec<RichText>>>,
     current_conversation: Arc<Mutex<Vec<ConversationMessage>>>,
 ) {
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -220,7 +220,7 @@ fn execute_prompt(
         // Add prompt to output (lock only for this)
         {
             let mut output_lock = output.lock().unwrap();
-            output_lock.push(format!(">> {}", prompt.clone()));
+            output_lock.push(RichText::new(format!(">> {}", prompt.clone())));
         }
 
         // Clone conversation for use in async call (lock only for this)
@@ -231,18 +231,13 @@ fn execute_prompt(
 
         let result = agent::execute_prompt(&config, &prompt, &conversation).await;
 
-        // Prepare updates for output and conversation
-        let conversation_update;
-        let output_update;
+        let conversation_update: Option<Vec<ConversationMessage>>;
+        let output_update: Option<RichText>;
         match result {
             Ok(pay_type_change) => {
-                let text = format!(
-                    "Set pay type for {} to {}",
-                    pay_type_change.date, pay_type_change.pay_type
-                );
                 // On success, clear conversation and push output
                 conversation_update = Some(Vec::new());
-                output_update = Some(text);
+                output_update = Some(RichText::new(format!("{}", pay_type_change)).strong());
             }
             Err(e) => {
                 // On error, add user prompt to conversation
@@ -255,10 +250,10 @@ fn execute_prompt(
                 match e {
                     agent::PayTypeError::GptError(msg) => {
                         new_conversation.push(ConversationMessage::new(Role::Agent, msg.clone()));
-                        output_update = Some(format!("Agent: {}", msg));
+                        output_update = Some(RichText::new(format!("Agent: {}", msg)));
                     }
                     agent::PayTypeError::EbmsError(msg) => {
-                        output_update = Some(format!("EBMS: {}", msg));
+                        output_update = Some(RichText::new(format!("EBMS: {}", msg)));
                     }
                 }
                 conversation_update = Some(new_conversation);
