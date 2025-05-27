@@ -1,4 +1,7 @@
-use agent::config::{AppConfig, load_config, save_config};
+use agent::{
+    config::{AppConfig, load_config, save_config},
+    gpt::{GptConversationMessage, GptRole},
+};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 
@@ -29,7 +32,8 @@ struct AgentApp {
 
     //prompts
     prompt: String,
-    pub gpt_responses: Arc<Mutex<Vec<String>>>,
+    pub responses: Arc<Mutex<Vec<String>>>,
+    current_conversation: Arc<Mutex<Vec<GptConversationMessage>>>,
     is_working: Arc<Mutex<bool>>,
 }
 
@@ -44,7 +48,8 @@ impl Default for AgentApp {
             is_logged_in: !config.ebms_username.is_empty(),
             config,
             prompt: String::new(),
-            gpt_responses: Arc::new(Mutex::new(vec![])),
+            responses: Arc::new(Mutex::new(vec![])),
+            current_conversation: Arc::new(Mutex::new(vec![])),
             is_working: Arc::new(Mutex::new(false)),
         }
     }
@@ -141,9 +146,10 @@ impl AgentApp {
                         *is_working = true;
                     }
                     let is_working_clone = self.is_working.clone();
-                    let gpt_responses_clone = self.gpt_responses.clone();
+                    let gpt_responses_clone = self.responses.clone();
+                    let conversation_clone = self.current_conversation.clone();
                     std::thread::spawn(move || {
-                        execute_prompt(config, prompt, gpt_responses_clone);
+                        execute_prompt(config, prompt, gpt_responses_clone, conversation_clone);
                         let mut is_working = is_working_clone.lock().unwrap();
                         *is_working = false;
                     });
@@ -153,7 +159,7 @@ impl AgentApp {
                 }
             });
             ui.add_space(16.0);
-            if let Ok(response_lock) = self.gpt_responses.lock() {
+            if let Ok(response_lock) = self.responses.lock() {
                 for response in response_lock.iter().rev() {
                     ui.label(response);
                 }
@@ -169,24 +175,42 @@ impl AgentApp {
     }
 }
 
-fn execute_prompt(config: AppConfig, prompt: String, gpt_responses: Arc<Mutex<Vec<String>>>) {
+fn execute_prompt(
+    config: AppConfig,
+    prompt: String,
+    gpt_responses: Arc<Mutex<Vec<String>>>,
+    current_conversation: Arc<Mutex<Vec<GptConversationMessage>>>,
+) {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
     rt.block_on(async {
-        let result = agent::execute_prompt(&config, &prompt).await;
+        let conversation = Some(current_conversation.lock().unwrap().clone()); //this should unlock immediately after cloning
+        let result = agent::execute_prompt(&config, &prompt, &conversation).await;
         let mut response_lock = gpt_responses.lock().unwrap();
+        let mut conversation_lock = current_conversation.lock().unwrap();
         match result {
             Ok(pay_type_change) => {
                 let text = format!(
                     "Set pay type for {} to {}",
                     pay_type_change.date, pay_type_change.pay_type
                 );
+                conversation_lock.clear();
                 response_lock.push(text);
             }
             Err(e) => {
-                response_lock.push(e.to_string());
+                conversation_lock.push(GptConversationMessage::new(GptRole::User, prompt.clone()));
+                match e {
+                    agent::PayTypeError::GptError(msg) => {
+                        conversation_lock
+                            .push(GptConversationMessage::new(GptRole::System, msg.clone()));
+                        response_lock.push(format!("Agent: {}", msg));
+                    }
+                    agent::PayTypeError::EbmsError(msg) => {
+                        response_lock.push(format!("EBMS: {}", msg));
+                    }
+                }
             }
         }
     });

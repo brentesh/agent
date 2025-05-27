@@ -2,6 +2,33 @@ use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
 
+#[derive(Clone)]
+pub enum GptRole {
+    User,
+    System,
+}
+
+impl GptRole {
+    fn as_str(&self) -> &'static str {
+        match self {
+            GptRole::User => "user",
+            GptRole::System => "system",
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct GptConversationMessage {
+    role: GptRole,
+    content: String,
+}
+
+impl GptConversationMessage {
+    pub fn new(role: GptRole, content: String) -> Self {
+        Self { role, content }
+    }
+}
+
 //these classes represent the structure of the GPT API response and are just here for deserialization
 #[derive(Debug, Deserialize, Clone)]
 pub struct GptFunctionCall {
@@ -27,24 +54,45 @@ pub struct GptMessage {
 pub async fn call_gpt(
     api_key: &str,
     prompt: &str,
+    conversation: &Option<Vec<GptConversationMessage>>,
 ) -> Result<GptFunctionCall, Box<dyn std::error::Error>> {
     let client = Client::new();
     //this is important to let gpt know the context, otherwise it gets confused by "today", "wednesday", etc.
     let now = chrono::Local::now();
     let today = now.format("%A, %Y-%m-%d").to_string(); // e.g. "Monday, 2025-05-26"
 
-    let full_prompt = format!(
-        "You are a helpful assistant that can set pay types for employees \
-         If no pay type is specified, use Salary by default \
-         Today's date is {} \
-         Here is the prompt: {}",
-        today, prompt
-    );
+    let mut full_conversation: Vec<GptConversationMessage> = vec![GptConversationMessage::new(
+        GptRole::System,
+        format!(
+            "You are a helpful assistant that can set pay types for employees. \
+             If no pay type is specified, use Salary by default.
+             Today's date is {}",
+            today
+        ),
+    )];
+
+    if let Some(conv) = conversation {
+        if !conv.is_empty() {
+            full_conversation.extend(conv.clone());
+        }
+    }
+
+    full_conversation.push(GptConversationMessage::new(
+        GptRole::User,
+        prompt.to_string(),
+    ));
+
     let body = json!({
         "model": "gpt-4",
-        "messages": [
-            { "role": "user", "content": full_prompt }
-        ],
+        "messages": full_conversation
+            .iter()
+            .map(|msg| {
+            json!({
+                "role": msg.role.as_str(),
+                "content": msg.content
+            })
+            })
+            .collect::<Vec<_>>(),
         "functions": get_functions_metadata(),
         "function_call": "auto"
     });

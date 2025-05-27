@@ -1,28 +1,38 @@
 use config::AppConfig;
+use gpt::GptConversationMessage;
 
 mod api;
 pub mod config;
-mod gpt;
+pub mod gpt;
 
 pub struct PayTypeChange {
     pub date: String,
     pub pay_type: String,
 }
 
-pub async fn execute_prompt(config: &AppConfig, prompt: &str) -> Result<PayTypeChange, String> {
+pub enum PayTypeError {
+    GptError(String),
+    EbmsError(String),
+}
+
+pub async fn execute_prompt(
+    config: &AppConfig,
+    prompt: &str,
+    conversation: &Option<Vec<GptConversationMessage>>,
+) -> Result<PayTypeChange, PayTypeError> {
     println!("{}", format!("Calling GPT with prompt: {}", prompt));
 
     let gpt_result: Result<gpt::GptFunctionCall, Box<dyn std::error::Error>> =
-        gpt::call_gpt(&config.gpt_api_key, &prompt).await;
+        gpt::call_gpt(&config.gpt_api_key, &prompt, conversation).await;
 
     let gpt::GptFunctionCall { arguments } = match gpt_result {
         Ok(result) => result,
-        Err(e) => return Err(format!("Error calling GPT: {}", e)),
+        Err(e) => return Err(PayTypeError::GptError(e.to_string())),
     };
 
     match handle_api_call(config, &arguments).await {
         Ok(response) => Ok(response),
-        Err(e) => Err(format!("Error handling API call: {}", e)),
+        Err(e) => Err(PayTypeError::EbmsError(e.to_string())),
     }
 }
 
