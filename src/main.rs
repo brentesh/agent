@@ -232,9 +232,8 @@ fn execute_prompt(
         let result = agent::execute_prompt(&config, &prompt, &conversation).await;
 
         // Prepare updates for output and conversation
-        let mut output_update = None;
-        let mut conversation_update = None;
-
+        let conversation_update;
+        let output_update;
         match result {
             Ok(pay_type_change) => {
                 let text = format!(
