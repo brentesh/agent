@@ -2,9 +2,23 @@ use agent::config::{AppConfig, load_config, save_config};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 
+fn main() {
+    let options = eframe::NativeOptions::default();
+    if let Err(e) = eframe::run_native(
+        "My egui App",
+        options,
+        Box::new(|_cc| {
+            Ok::<Box<dyn eframe::App>, Box<dyn std::error::Error + Send + Sync>>(Box::new(
+                AgentApp::default(),
+            ))
+        }),
+    ) {
+        eprintln!("Failed to launch the app: {}", e);
+    }
+}
+
 struct AgentApp {
     pub config: AppConfig,
-    pub gpt_response: Arc<Mutex<Option<String>>>,
 
     // Login form fields
     username: String,
@@ -15,13 +29,14 @@ struct AgentApp {
 
     //prompts
     prompt: String,
+    pub gpt_responses: Arc<Mutex<Vec<String>>>,
+    is_working: bool,
 }
 
 impl Default for AgentApp {
     fn default() -> Self {
         let config = load_config();
         Self {
-            gpt_response: Arc::new(Mutex::new(None)),
             username: config.ebms_username.clone(),
             password: config.ebms_password.clone(),
             employee_id: config.employee_id.clone(),
@@ -29,6 +44,8 @@ impl Default for AgentApp {
             is_logged_in: !config.ebms_username.is_empty(),
             config,
             prompt: String::new(),
+            gpt_responses: Arc::new(Mutex::new(vec![])),
+            is_working: false,
         }
     }
 }
@@ -120,16 +137,44 @@ impl AgentApp {
                     let prompt = self.prompt.clone();
                     // Spawn the async task in a background thread
                     let config: AppConfig = self.config.clone();
-                    let gpt_response_clone = &self.gpt_response.clone();
-                    execute_prompt(config, prompt, gpt_response_clone.clone());
+                    self.is_working = true;
+                    let is_working_ptr = Arc::new(Mutex::new(&mut self.is_working));
+                    let gpt_responses_clone = self.gpt_responses.clone();
+                    execute_prompt(config, prompt, is_working_ptr, gpt_responses_clone);
+                }
+                if self.is_working {
+                    let time = ui.input(|i| i.time) as f32;
+                    let angle = time * 2.0 * std::f32::consts::PI;
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
+                    ui.painter().add(egui::epaint::CircleShape {
+                        center: rect.center(),
+                        radius: 8.0,
+                        fill: egui::Color32::TRANSPARENT,
+                        stroke: egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 200, 255)),
+                    });
+                    // Draw arc manually since PathShape::arc does not exist
+                    let center = rect.center();
+                    let radius = 8.0;
+                    let start_angle = angle;
+                    let end_angle = angle + std::f32::consts::PI * 1.5;
+                    let num_points = 32;
+                    let mut points = Vec::with_capacity(num_points + 1);
+                    for i in 0..=num_points {
+                        let t = i as f32 / num_points as f32;
+                        let theta = start_angle + t * (end_angle - start_angle);
+                        points.push(center + egui::vec2(theta.cos(), theta.sin()) * radius);
+                    }
+                    ui.painter().add(egui::epaint::PathShape::line(
+                        points,
+                        egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 200, 255)),
+                    ));
                 }
             });
             ui.add_space(16.0);
-            if let Ok(response_lock) = self.gpt_response.lock() {
-                if let Some(ref response) = *response_lock {
+            if let Ok(response_lock) = self.gpt_responses.lock() {
+                for response in response_lock.iter() {
                     ui.label(response);
-                } else {
-                    ui.label(" ");
                 }
             }
             ui.add_space(16.0);
@@ -142,46 +187,36 @@ impl AgentApp {
     }
 }
 
-fn execute_prompt(config: AppConfig, prompt: String, gpt_response: Arc<Mutex<Option<String>>>) {
+fn execute_prompt(
+    config: AppConfig,
+    prompt: String,
+    is_working_ptr: Arc<Mutex<&mut bool>>,
+    gpt_responses: Arc<Mutex<Vec<String>>>,
+) {
+    let is_working_clone = is_working_ptr.clone();
     std::thread::spawn(move || {
-        {
-            let mut response_lock = gpt_response.lock().unwrap();
-            *response_lock = Some("Executing prompt...".to_string());
-        }
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap();
         rt.block_on(async {
             let result = agent::execute_prompt(&config, &prompt).await;
-            let mut response_lock = gpt_response.lock().unwrap();
+            let mut is_working = is_working_clone.lock().unwrap();
+            **is_working = false;
+
+            let mut response_lock = gpt_responses.lock().unwrap();
             match result {
                 Ok(pay_type_change) => {
                     let text = format!(
                         "Set pay type for {} to {}",
                         pay_type_change.date, pay_type_change.pay_type
                     );
-                    *response_lock = Some(text);
+                    response_lock.push(text);
                 }
                 Err(e) => {
-                    *response_lock = Some(e.to_string());
+                    response_lock.push(e.to_string());
                 }
             }
         });
     });
-}
-
-fn main() {
-    let options = eframe::NativeOptions::default();
-    if let Err(e) = eframe::run_native(
-        "My egui App",
-        options,
-        Box::new(|_cc| {
-            Ok::<Box<dyn eframe::App>, Box<dyn std::error::Error + Send + Sync>>(Box::new(
-                AgentApp::default(),
-            ))
-        }),
-    ) {
-        eprintln!("Failed to launch the app: {}", e);
-    }
 }
