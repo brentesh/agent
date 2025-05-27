@@ -2,13 +2,13 @@ use agent::{
     ConversationMessage, Role,
     config::{AppConfig, load_config, save_config},
 };
-use eframe::egui;
+use eframe::egui::{self, Id};
 use std::sync::{Arc, Mutex};
 
 fn main() {
     let options = eframe::NativeOptions::default();
     if let Err(e) = eframe::run_native(
-        "My egui App",
+        "Personal Agent",
         options,
         Box::new(|_cc| {
             Ok::<Box<dyn eframe::App>, Box<dyn std::error::Error + Send + Sync>>(Box::new(
@@ -29,6 +29,7 @@ struct AgentApp {
     employee_id: String,
     gpt_api_key: String,
     is_logged_in: bool,
+    focused: bool,
 
     //prompts
     prompt: String,
@@ -46,6 +47,7 @@ impl Default for AgentApp {
             employee_id: config.employee_id.clone(),
             gpt_api_key: config.gpt_api_key.clone(),
             is_logged_in: !config.ebms_username.is_empty(),
+            focused: false,
             config,
             prompt: String::new(),
             responses: Arc::new(Mutex::new(vec![])),
@@ -132,12 +134,21 @@ impl AgentApp {
 
     fn draw_main_ui(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Enter a prompt for the agent to execute!");
-            ui.add_space(16.0);
             ui.horizontal(|ui| {
-                ui.text_edit_singleline(&mut self.prompt).request_focus();
+                let id = Id::new("my_input_box");
+
+                if !self.focused {
+                    ctx.memory_mut(|mem| mem.request_focus(id));
+                    self.focused = true;
+                }
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.prompt)
+                        .hint_text("Type your prompt here...")
+                        .id(id),
+                );
                 let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
                 if ui.button(">").clicked() || enter_pressed {
+                    ctx.memory_mut(|mem| mem.request_focus(id));
                     let prompt = self.prompt.clone();
                     // Spawn the async task in a background thread
                     let config: AppConfig = self.config.clone();
