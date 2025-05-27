@@ -30,9 +30,9 @@ struct AgentApp {
     employee_id: String,
     gpt_api_key: String,
     is_logged_in: bool,
-    focused: bool,
 
-    //prompts
+    //main screen
+    focused: bool,
     prompt: String,
     pub output: Arc<Mutex<Vec<String>>>,
     current_conversation: Arc<Mutex<Vec<ConversationMessage>>>,
