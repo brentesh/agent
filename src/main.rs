@@ -130,7 +130,6 @@ impl AgentApp {
             ui.heading("Enter a prompt for the agent to execute!");
             ui.add_space(16.0);
             ui.horizontal(|ui| {
-                ui.label("Prompt");
                 ui.text_edit_singleline(&mut self.prompt).request_focus();
                 let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
                 if ui.button(">").clicked() || enter_pressed {
@@ -138,37 +137,17 @@ impl AgentApp {
                     // Spawn the async task in a background thread
                     let config: AppConfig = self.config.clone();
                     self.is_working = true;
-                    let is_working_ptr = Arc::new(Mutex::new(&mut self.is_working));
+                    let is_working_ptr = Arc::new(Mutex::new(self.is_working));
+                    let is_working_clone = is_working_ptr.clone();
                     let gpt_responses_clone = self.gpt_responses.clone();
-                    execute_prompt(config, prompt, is_working_ptr, gpt_responses_clone);
+                    std::thread::spawn(move || {
+                        execute_prompt(config, prompt, gpt_responses_clone);
+                        let mut is_working = is_working_clone.lock().unwrap();
+                        *is_working = false;
+                    });
                 }
                 if self.is_working {
-                    let time = ui.input(|i| i.time) as f32;
-                    let angle = time * 2.0 * std::f32::consts::PI;
-                    let (rect, _) =
-                        ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
-                    ui.painter().add(egui::epaint::CircleShape {
-                        center: rect.center(),
-                        radius: 8.0,
-                        fill: egui::Color32::TRANSPARENT,
-                        stroke: egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 200, 255)),
-                    });
-                    // Draw arc manually since PathShape::arc does not exist
-                    let center = rect.center();
-                    let radius = 8.0;
-                    let start_angle = angle;
-                    let end_angle = angle + std::f32::consts::PI * 1.5;
-                    let num_points = 32;
-                    let mut points = Vec::with_capacity(num_points + 1);
-                    for i in 0..=num_points {
-                        let t = i as f32 / num_points as f32;
-                        let theta = start_angle + t * (end_angle - start_angle);
-                        points.push(center + egui::vec2(theta.cos(), theta.sin()) * radius);
-                    }
-                    ui.painter().add(egui::epaint::PathShape::line(
-                        points,
-                        egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 200, 255)),
-                    ));
+                    ui.label("Working...");
                 }
             });
             ui.add_space(16.0);
@@ -187,36 +166,25 @@ impl AgentApp {
     }
 }
 
-fn execute_prompt(
-    config: AppConfig,
-    prompt: String,
-    is_working_ptr: Arc<Mutex<&mut bool>>,
-    gpt_responses: Arc<Mutex<Vec<String>>>,
-) {
-    let is_working_clone = is_working_ptr.clone();
-    std::thread::spawn(move || {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        rt.block_on(async {
-            let result = agent::execute_prompt(&config, &prompt).await;
-            let mut is_working = is_working_clone.lock().unwrap();
-            **is_working = false;
-
-            let mut response_lock = gpt_responses.lock().unwrap();
-            match result {
-                Ok(pay_type_change) => {
-                    let text = format!(
-                        "Set pay type for {} to {}",
-                        pay_type_change.date, pay_type_change.pay_type
-                    );
-                    response_lock.push(text);
-                }
-                Err(e) => {
-                    response_lock.push(e.to_string());
-                }
+fn execute_prompt(config: AppConfig, prompt: String, gpt_responses: Arc<Mutex<Vec<String>>>) {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let result = agent::execute_prompt(&config, &prompt).await;
+        let mut response_lock = gpt_responses.lock().unwrap();
+        match result {
+            Ok(pay_type_change) => {
+                let text = format!(
+                    "Set pay type for {} to {}",
+                    pay_type_change.date, pay_type_change.pay_type
+                );
+                response_lock.push(text);
             }
-        });
+            Err(e) => {
+                response_lock.push(e.to_string());
+            }
+        }
     });
 }
