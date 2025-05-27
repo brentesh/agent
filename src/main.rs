@@ -158,12 +158,13 @@ impl AgentApp {
                     ui.label(response);
                 }
             }
-            ui.add_space(16.0);
-            if ui.button("Log Out").clicked() {
-                self.is_logged_in = false;
-                self.config = AppConfig::empty();
-                save_config(&self.config);
-            }
+            ui.with_layout(egui::Layout::bottom_up(egui::Align::RIGHT), |ui| {
+                if ui.button("Log Out").clicked() {
+                    self.is_logged_in = false;
+                    self.config = AppConfig::empty();
+                    save_config(&self.config);
+                }
+            });
         });
     }
 }
