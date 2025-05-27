@@ -176,6 +176,7 @@ impl AgentApp {
                         let mut is_working = is_working_clone.lock().unwrap();
                         *is_working = false;
                     });
+                    self.prompt.clear();
                 }
                 if *self.is_working.lock().unwrap() {
                     ui.label("Working...");
@@ -221,7 +222,10 @@ fn execute_prompt(
             .unwrap()
             .push(format!(">> {}", prompt.clone()));
 
-        let conversation = Some(current_conversation.lock().unwrap().clone()); //this should unlock immediately after cloning
+        let conversation = {
+            let lock = current_conversation.lock().unwrap();
+            Some(lock.clone())
+        }; //release lock immediately
         let result = agent::execute_prompt(&config, &prompt, &conversation).await;
         let mut output_lock = output.lock().unwrap();
         let mut conversation_lock = current_conversation.lock().unwrap();
