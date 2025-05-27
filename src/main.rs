@@ -34,7 +34,7 @@ struct AgentApp {
 
     //prompts
     prompt: String,
-    pub responses: Arc<Mutex<Vec<String>>>,
+    pub output: Arc<Mutex<Vec<String>>>,
     current_conversation: Arc<Mutex<Vec<ConversationMessage>>>,
     is_working: Arc<Mutex<bool>>,
 }
@@ -52,7 +52,7 @@ impl Default for AgentApp {
             focused: false,
             config,
             prompt: String::new(),
-            responses: Arc::new(Mutex::new(vec![])),
+            output: Arc::new(Mutex::new(vec![])),
             current_conversation: Arc::new(Mutex::new(vec![])),
             is_working: Arc::new(Mutex::new(false)),
         }
@@ -169,10 +169,10 @@ impl AgentApp {
                         *is_working = true;
                     }
                     let is_working_clone = self.is_working.clone();
-                    let gpt_responses_clone = self.responses.clone();
+                    let output_ref_clone = self.output.clone();
                     let conversation_clone = self.current_conversation.clone();
                     std::thread::spawn(move || {
-                        execute_prompt(config, prompt, gpt_responses_clone, conversation_clone);
+                        execute_prompt(config, prompt, output_ref_clone, conversation_clone);
                         let mut is_working = is_working_clone.lock().unwrap();
                         *is_working = false;
                     });
@@ -182,26 +182,33 @@ impl AgentApp {
                 }
             });
             ui.add_space(16.0);
-            if let Ok(response_lock) = self.responses.lock() {
+            if let Ok(response_lock) = self.output.lock() {
                 for response in response_lock.iter().rev() {
                     ui.label(response);
                 }
             }
             ui.with_layout(egui::Layout::bottom_up(egui::Align::RIGHT), |ui| {
                 if ui.button("Log Out").clicked() {
-                    self.is_logged_in = false;
-                    self.config = AppConfig::empty();
-                    save_config(&self.config);
+                    self.log_out();
                 }
             });
         });
+    }
+
+    fn log_out(&mut self) {
+        self.prompt.clear();
+        self.output.lock().unwrap().clear();
+        self.current_conversation.lock().unwrap().clear();
+        self.is_logged_in = false;
+        self.config = AppConfig::empty();
+        save_config(&self.config);
     }
 }
 
 fn execute_prompt(
     config: AppConfig,
     prompt: String,
-    gpt_responses: Arc<Mutex<Vec<String>>>,
+    output: Arc<Mutex<Vec<String>>>,
     current_conversation: Arc<Mutex<Vec<ConversationMessage>>>,
 ) {
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -209,9 +216,14 @@ fn execute_prompt(
         .build()
         .unwrap();
     rt.block_on(async {
+        output
+            .lock()
+            .unwrap()
+            .push(format!(">> {}", prompt.clone()));
+
         let conversation = Some(current_conversation.lock().unwrap().clone()); //this should unlock immediately after cloning
         let result = agent::execute_prompt(&config, &prompt, &conversation).await;
-        let mut response_lock = gpt_responses.lock().unwrap();
+        let mut output_lock = output.lock().unwrap();
         let mut conversation_lock = current_conversation.lock().unwrap();
         match result {
             Ok(pay_type_change) => {
@@ -220,17 +232,17 @@ fn execute_prompt(
                     pay_type_change.date, pay_type_change.pay_type
                 );
                 conversation_lock.clear();
-                response_lock.push(text);
+                output_lock.push(text);
             }
             Err(e) => {
                 conversation_lock.push(ConversationMessage::new(Role::User, prompt.clone()));
                 match e {
                     agent::PayTypeError::GptError(msg) => {
                         conversation_lock.push(ConversationMessage::new(Role::Agent, msg.clone()));
-                        response_lock.push(format!("Agent: {}", msg));
+                        output_lock.push(format!("Agent: {}", msg));
                     }
                     agent::PayTypeError::EbmsError(msg) => {
-                        response_lock.push(format!("EBMS: {}", msg));
+                        output_lock.push(format!("EBMS: {}", msg));
                     }
                 }
             }
