@@ -217,39 +217,63 @@ fn execute_prompt(
         .build()
         .unwrap();
     rt.block_on(async {
-        output
-            .lock()
-            .unwrap()
-            .push(format!(">> {}", prompt.clone()));
+        // Add prompt to output (lock only for this)
+        {
+            let mut output_lock = output.lock().unwrap();
+            output_lock.push(format!(">> {}", prompt.clone()));
+        }
 
+        // Clone conversation for use in async call (lock only for this)
         let conversation = {
             let lock = current_conversation.lock().unwrap();
             Some(lock.clone())
-        }; //release lock immediately
+        }; // lock released here
+
         let result = agent::execute_prompt(&config, &prompt, &conversation).await;
-        let mut output_lock = output.lock().unwrap();
-        let mut conversation_lock = current_conversation.lock().unwrap();
+
+        // Prepare updates for output and conversation
+        let mut output_update = None;
+        let mut conversation_update = None;
+
         match result {
             Ok(pay_type_change) => {
                 let text = format!(
                     "Set pay type for {} to {}",
                     pay_type_change.date, pay_type_change.pay_type
                 );
-                conversation_lock.clear();
-                output_lock.push(text);
+                // On success, clear conversation and push output
+                conversation_update = Some(Vec::new());
+                output_update = Some(text);
             }
             Err(e) => {
-                conversation_lock.push(ConversationMessage::new(Role::User, prompt.clone()));
+                // On error, add user prompt to conversation
+                let mut new_conversation = {
+                    let lock = current_conversation.lock().unwrap();
+                    let mut cloned = lock.clone();
+                    cloned.push(ConversationMessage::new(Role::User, prompt.clone()));
+                    cloned
+                };
                 match e {
                     agent::PayTypeError::GptError(msg) => {
-                        conversation_lock.push(ConversationMessage::new(Role::Agent, msg.clone()));
-                        output_lock.push(format!("Agent: {}", msg));
+                        new_conversation.push(ConversationMessage::new(Role::Agent, msg.clone()));
+                        output_update = Some(format!("Agent: {}", msg));
                     }
                     agent::PayTypeError::EbmsError(msg) => {
-                        output_lock.push(format!("EBMS: {}", msg));
+                        output_update = Some(format!("EBMS: {}", msg));
                     }
                 }
+                conversation_update = Some(new_conversation);
             }
+        }
+
+        // Apply updates (lock only for this)
+        if let Some(new_conversation) = conversation_update {
+            let mut conversation_lock = current_conversation.lock().unwrap();
+            *conversation_lock = new_conversation;
+        }
+        if let Some(new_output) = output_update {
+            let mut output_lock = output.lock().unwrap();
+            output_lock.push(new_output);
         }
     });
 }
