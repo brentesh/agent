@@ -1,6 +1,6 @@
 use agent::{
+    ConversationMessage, Role,
     config::{AppConfig, load_config, save_config},
-    gpt::{GptConversationMessage, GptRole},
 };
 use eframe::egui;
 use std::sync::{Arc, Mutex};
@@ -33,7 +33,7 @@ struct AgentApp {
     //prompts
     prompt: String,
     pub responses: Arc<Mutex<Vec<String>>>,
-    current_conversation: Arc<Mutex<Vec<GptConversationMessage>>>,
+    current_conversation: Arc<Mutex<Vec<ConversationMessage>>>,
     is_working: Arc<Mutex<bool>>,
 }
 
@@ -179,7 +179,7 @@ fn execute_prompt(
     config: AppConfig,
     prompt: String,
     gpt_responses: Arc<Mutex<Vec<String>>>,
-    current_conversation: Arc<Mutex<Vec<GptConversationMessage>>>,
+    current_conversation: Arc<Mutex<Vec<ConversationMessage>>>,
 ) {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -200,11 +200,10 @@ fn execute_prompt(
                 response_lock.push(text);
             }
             Err(e) => {
-                conversation_lock.push(GptConversationMessage::new(GptRole::User, prompt.clone()));
+                conversation_lock.push(ConversationMessage::new(Role::User, prompt.clone()));
                 match e {
                     agent::PayTypeError::GptError(msg) => {
-                        conversation_lock
-                            .push(GptConversationMessage::new(GptRole::System, msg.clone()));
+                        conversation_lock.push(ConversationMessage::new(Role::Agent, msg.clone()));
                         response_lock.push(format!("Agent: {}", msg));
                     }
                     agent::PayTypeError::EbmsError(msg) => {

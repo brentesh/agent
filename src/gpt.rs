@@ -1,31 +1,14 @@
+use super::{ConversationMessage, Role};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
 
-#[derive(Clone)]
-pub enum GptRole {
-    User,
-    System,
-}
-
-impl GptRole {
+impl Role {
     fn as_str(&self) -> &'static str {
         match self {
-            GptRole::User => "user",
-            GptRole::System => "system",
+            Role::User => "user",
+            Role::Agent => "system",
         }
-    }
-}
-
-#[derive(Clone)]
-pub struct GptConversationMessage {
-    role: GptRole,
-    content: String,
-}
-
-impl GptConversationMessage {
-    pub fn new(role: GptRole, content: String) -> Self {
-        Self { role, content }
     }
 }
 
@@ -54,15 +37,15 @@ pub struct GptMessage {
 pub async fn call_gpt(
     api_key: &str,
     prompt: &str,
-    conversation: &Option<Vec<GptConversationMessage>>,
+    conversation: &Option<Vec<ConversationMessage>>,
 ) -> Result<GptFunctionCall, Box<dyn std::error::Error>> {
     let client = Client::new();
     //this is important to let gpt know the context, otherwise it gets confused by "today", "wednesday", etc.
     let now = chrono::Local::now();
     let today = now.format("%A, %Y-%m-%d").to_string(); // e.g. "Monday, 2025-05-26"
 
-    let mut full_conversation: Vec<GptConversationMessage> = vec![GptConversationMessage::new(
-        GptRole::System,
+    let mut full_conversation: Vec<ConversationMessage> = vec![ConversationMessage::new(
+        Role::Agent,
         format!(
             "You are a helpful assistant that can set pay types for employees. \
              If no pay type is specified, use Salary by default.
@@ -77,10 +60,7 @@ pub async fn call_gpt(
         }
     }
 
-    full_conversation.push(GptConversationMessage::new(
-        GptRole::User,
-        prompt.to_string(),
-    ));
+    full_conversation.push(ConversationMessage::new(Role::User, prompt.to_string()));
 
     let body = json!({
         "model": "gpt-4",

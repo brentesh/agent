@@ -1,9 +1,8 @@
 use config::AppConfig;
-use gpt::GptConversationMessage;
 
 mod api;
 pub mod config;
-pub mod gpt;
+mod gpt;
 
 pub struct PayTypeChange {
     pub date: String,
@@ -15,10 +14,28 @@ pub enum PayTypeError {
     EbmsError(String),
 }
 
+#[derive(Clone)]
+pub enum Role {
+    User,
+    Agent,
+}
+
+#[derive(Clone)]
+pub struct ConversationMessage {
+    role: Role,
+    content: String,
+}
+
+impl ConversationMessage {
+    pub fn new(role: Role, content: String) -> Self {
+        Self { role, content }
+    }
+}
+
 pub async fn execute_prompt(
     config: &AppConfig,
     prompt: &str,
-    conversation: &Option<Vec<GptConversationMessage>>,
+    conversation: &Option<Vec<ConversationMessage>>,
 ) -> Result<PayTypeChange, PayTypeError> {
     println!("{}", format!("Calling GPT with prompt: {}", prompt));
 
