@@ -1,6 +1,6 @@
 use crate::PayType;
 
-use super::{ConversationMessage, Role};
+use super::{ConversationMessage, FunctionCall, Role};
 use crate::api::format_pay_code;
 use reqwest::Client;
 use serde::Deserialize;
@@ -11,17 +11,13 @@ impl Role {
     fn as_str(&self) -> &'static str {
         match self {
             Role::User => "user",
-            Role::Agent => "system",
+            Role::Assistant => "assistant",
+            Role::System => "system",
         }
     }
 }
 
 //these classes represent the structure of the GPT API response and are just here for deserialization
-#[derive(Debug, Deserialize, Clone)]
-pub struct GptFunctionCall {
-    pub arguments: String,
-}
-
 #[derive(Debug, Deserialize)]
 pub struct GptApiResponse {
     pub choices: Vec<GptChoice>,
@@ -34,7 +30,7 @@ pub struct GptChoice {
 
 #[derive(Debug, Deserialize)]
 pub struct GptMessage {
-    pub function_call: Option<GptFunctionCall>,
+    pub function_call: Option<FunctionCall>,
     pub content: Option<String>,
 }
 
@@ -42,14 +38,14 @@ pub async fn call_gpt(
     api_key: &str,
     prompt: &str,
     conversation: &Option<Vec<ConversationMessage>>,
-) -> Result<GptFunctionCall, Box<dyn std::error::Error>> {
+) -> Result<FunctionCall, Box<dyn std::error::Error>> {
     let client = Client::new();
     //this is important to let gpt know the context, otherwise it gets confused by "today", "wednesday", etc.
     let now = chrono::Local::now();
     let today = now.format("%A, %Y-%m-%d").to_string(); // e.g. "Monday, 2025-05-26"
 
-    let mut full_conversation: Vec<ConversationMessage> = vec![ConversationMessage::new(
-        Role::Agent,
+    let mut full_conversation: Vec<ConversationMessage> = vec![ConversationMessage::new_content(
+        Role::Assistant,
         format!(
             "You are a helpful assistant that can set pay types for employees. \
              If no pay type is specified, use Salary by default. \
@@ -65,22 +61,39 @@ pub async fn call_gpt(
         }
     }
 
-    full_conversation.push(ConversationMessage::new(Role::User, prompt.to_string()));
+    full_conversation.push(ConversationMessage::new_content(
+        Role::User,
+        prompt.to_string(),
+    ));
 
     let body = json!({
         "model": "gpt-4",
         "messages": full_conversation
             .iter()
             .map(|msg| {
-            json!({
-                "role": msg.role.as_str(),
-                "content": msg.content
-            })
+                let mut obj = serde_json::json!({
+                    "role": msg.role.as_str(),
+                    "content": msg.content,
+                });
+                if let Some(fc) = &msg.function_call {
+                    if let serde_json::Value::Object(ref mut map) = obj {
+                        map.insert(
+                            "function_call".to_string(),
+                            serde_json::json!({
+                                "name": fc.name,
+                                "arguments": fc.arguments
+                            }),
+                        );
+                    }
+                }
+                obj
             })
             .collect::<Vec<_>>(),
         "functions": get_functions_metadata(),
         "function_call": "auto"
     });
+
+    println!("Calling GPT with body: {}", body);
 
     let res = client
         .post("https://api.openai.com/v1/chat/completions")

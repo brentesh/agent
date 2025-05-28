@@ -3,6 +3,7 @@ use std::fmt::Display;
 use api::format_pay_code;
 use chrono::Datelike;
 use config::AppConfig;
+use serde::Deserialize;
 use strum_macros::EnumIter;
 
 mod api;
@@ -43,19 +44,16 @@ pub struct PayTypeChange {
     pub date: chrono::NaiveDate,
     pub old_pay_type: String,
     pub pay_type: PayType,
+    pub function_call: Option<FunctionCall>,
 }
 
 impl Display for PayTypeChange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let now = chrono::Local::now().naive_local().date();
-        let formatted_dates = if let Some(date) = self.date.into() {
-            if date.year() == now.year() {
-                vec![format!("{}", date.format("%a %B %d"))]
-            } else {
-                vec![format!("{}", date.format("%a %B %d, %Y"))]
-            }
+        let formatted_date = if self.date.year() == now.year() {
+            format!("{}", self.date.format("%a %B %d"))
         } else {
-            vec![]
+            format!("{}", self.date.format("%a %B %d, %Y"))
         };
 
         let from = self.old_pay_type.to_string();
@@ -64,17 +62,30 @@ impl Display for PayTypeChange {
             return write!(
                 f,
                 "Pay type for {} was already set to {}",
-                formatted_dates.join(", "),
-                from
+                formatted_date, from
             );
         }
         write!(
             f,
             "Set pay type for {} from {} to {}",
-            formatted_dates.join(", "),
+            formatted_date, from, to,
+        )
+    }
+}
+
+impl PayTypeChange {
+    pub fn get_function_call(&self) -> Option<String> {
+        let from = self.old_pay_type.to_string();
+        let to = format_pay_code(&self.pay_type);
+        if from == to {
+            return None;
+        }
+        return Some(format!(
+            "I set the pay type for {} from {} to {}",
+            self.date.format("%a %B %d, %Y"),
             from,
             to,
-        )
+        ));
     }
 }
 
@@ -86,19 +97,38 @@ pub enum PayTypeError {
 #[derive(Clone)]
 pub enum Role {
     User,
-    Agent,
+    System,
+    Assistant,
 }
 
 #[derive(Clone)]
 pub struct ConversationMessage {
     role: Role,
-    content: String,
+    content: Option<String>,
+    function_call: Option<FunctionCall>,
 }
 
 impl ConversationMessage {
-    pub fn new(role: Role, content: String) -> Self {
-        Self { role, content }
+    pub fn new_content(role: Role, content: String) -> Self {
+        Self {
+            role,
+            content: Some(content),
+            function_call: None,
+        }
     }
+    pub fn new_function_call(function_call: FunctionCall) -> Self {
+        Self {
+            role: Role::Assistant,
+            content: None,
+            function_call: Some(function_call),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct FunctionCall {
+    pub name: String,
+    pub arguments: String,
 }
 
 pub async fn execute_prompt(
@@ -108,15 +138,15 @@ pub async fn execute_prompt(
 ) -> Result<Vec<PayTypeChange>, PayTypeError> {
     println!("{}", format!("Calling GPT with prompt: {}", prompt));
 
-    let gpt_result: Result<gpt::GptFunctionCall, Box<dyn std::error::Error>> =
+    let gpt_result: Result<FunctionCall, Box<dyn std::error::Error>> =
         gpt::call_gpt(&config.gpt_api_key, &prompt, conversation).await;
 
-    let gpt::GptFunctionCall { arguments } = match gpt_result {
+    let function_call = match gpt_result {
         Ok(result) => result,
         Err(e) => return Err(PayTypeError::GptError(e.to_string())),
     };
 
-    match handle_api_call(config, &arguments).await {
+    match handle_api_call(config, &function_call).await {
         Ok(response) => Ok(response),
         Err(e) => Err(PayTypeError::EbmsError(e.to_string())),
     }
@@ -124,14 +154,9 @@ pub async fn execute_prompt(
 
 async fn handle_api_call(
     config: &AppConfig,
-    function_call_arguments: &str,
+    function_call: &FunctionCall,
 ) -> Result<Vec<PayTypeChange>, String> {
-    println!(
-        "{}",
-        format!("handle api call: {}", &function_call_arguments)
-    );
-
-    let args: serde_json::Value = serde_json::from_str(function_call_arguments)
+    let args: serde_json::Value = serde_json::from_str(&function_call.arguments)
         .map_err(|e| format!("Failed to parse function call arguments: {}", e))?;
 
     let date_values = args["dates"]
@@ -156,7 +181,8 @@ async fn handle_api_call(
         .map_err(|_| format!("Invalid pay type returned from agent: {}", pay_type_str))?;
 
     println!("Setting pay type '{}' for dates {:?}", pay_type_str, dates);
-    let result = api::set_pay_type(config, &dates, &pay_type)
+    // Serialize the GPT function call to a JSON string for logging or debugging
+    let result = api::set_pay_type(config, &dates, &pay_type, &function_call)
         .await
         .map_err(|e| e.to_string())?;
 
