@@ -162,6 +162,7 @@ impl AgentApp {
                         .margin(egui::Vec2::splat(8.0)),
                 );
                 let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                // Add a button next to the input box
                 if ui
                     .add_sized(
                         [38.0, 38.0], // width, height (height matches TextEdit)
@@ -173,31 +174,7 @@ impl AgentApp {
                     || enter_pressed
                 {
                     ctx.memory_mut(|mem| mem.request_focus(id));
-                    let prompt = self.prompt.clone();
-                    // Spawn the async task in a background thread
-                    let config: AppConfig = self.config.clone();
-                    {
-                        let mut is_working = self.is_working.lock().unwrap();
-                        *is_working = true;
-                    }
-                    let is_working_clone = self.is_working.clone();
-                    let output_ref_clone = self.output.clone();
-                    let conversation_clone = self.current_conversation.clone();
-                    std::thread::spawn(move || {
-                        let rt = tokio::runtime::Builder::new_current_thread()
-                            .enable_all()
-                            .build()
-                            .unwrap();
-                        rt.block_on(execute_prompt(
-                            config,
-                            prompt,
-                            output_ref_clone,
-                            conversation_clone,
-                        ));
-                        let mut is_working = is_working_clone.lock().unwrap();
-                        *is_working = false;
-                    });
-                    self.prompt.clear();
+                    self.button_clicked(&ctx);
                 }
             });
             ui.add_space(16.0);
@@ -224,6 +201,34 @@ impl AgentApp {
         self.is_logged_in = false;
         self.config = AppConfig::empty();
         save_config(&self.config);
+    }
+
+    fn button_clicked(&mut self, ctx: &egui::Context) {
+        let prompt = self.prompt.clone();
+        // Spawn the async task in a background thread
+        let config: AppConfig = self.config.clone();
+        {
+            let mut is_working = self.is_working.lock().unwrap();
+            *is_working = true;
+        }
+        let is_working_clone = self.is_working.clone();
+        let output_ref_clone = self.output.clone();
+        let conversation_clone = self.current_conversation.clone();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(execute_prompt(
+                config,
+                prompt,
+                output_ref_clone,
+                conversation_clone,
+            ));
+            let mut is_working = is_working_clone.lock().unwrap();
+            *is_working = false;
+        });
+        self.prompt.clear();
     }
 }
 
