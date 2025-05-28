@@ -40,7 +40,7 @@ pub struct GptMessage {
 pub async fn call_gpt(
     api_key: &str,
     prompt: &str,
-    conversation: &Option<Vec<ConversationMessage>>,
+    conversation: &Vec<ConversationMessage>,
 ) -> Result<FunctionCall, Box<dyn std::error::Error>> {
     let client = Client::new();
     //this is important to let gpt know the context, otherwise it gets confused by "today", "wednesday", etc.
@@ -58,10 +58,8 @@ pub async fn call_gpt(
         ),
     )];
 
-    if let Some(conv) = conversation {
-        if !conv.is_empty() {
-            full_conversation.extend(conv.clone());
-        }
+    if !conversation.is_empty() {
+        full_conversation.extend(conversation.clone());
     }
 
     full_conversation.push(ConversationMessage::new_content(

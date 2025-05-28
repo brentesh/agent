@@ -98,7 +98,7 @@ pub enum PayTypeError {
 pub async fn execute_prompt(
     config: &AppConfig,
     prompt: &str,
-    conversation: &Option<Vec<ConversationMessage>>,
+    conversation: &Vec<ConversationMessage>,
 ) -> Result<Vec<PayTypeChange>, PayTypeError> {
     println!("{}", format!("Calling GPT with prompt: {}", prompt));
 

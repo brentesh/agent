@@ -266,9 +266,9 @@ async fn execute_prompt(
     }
 
     // Clone conversation for use in async call (lock only for this)
-    let conversation = {
-        let lock = current_conversation.lock().unwrap();
-        Some(lock.clone())
+    let conversation: Vec<ConversationMessage>;
+    {
+        conversation = current_conversation.lock().unwrap().clone()
     }; // lock released here
 
     let result = agent::execute_prompt(&config, &prompt, &conversation).await;
@@ -293,26 +293,28 @@ async fn execute_prompt(
             conversation_update = Some(new_conversation);
         }
         Err(e) => {
-            // On error, add user prompt to conversation
-            let mut new_conversation = {
-                let lock = current_conversation.lock().unwrap();
-                let mut cloned = lock.clone();
-                cloned.push(ConversationMessage::new_content(Role::User, prompt.clone()));
-                cloned
-            };
             match e {
                 agent::PayTypeError::GptError(msg) => {
+                    output_messages.push(RichText::new(format!("Agent: {}", msg)));
+
+                    // On error, add user prompt to conversation
+                    let mut new_conversation = {
+                        let lock = current_conversation.lock().unwrap();
+                        let mut cloned = lock.clone();
+                        cloned.push(ConversationMessage::new_content(Role::User, prompt.clone()));
+                        cloned
+                    };
                     new_conversation.push(ConversationMessage::new_content(
                         Role::Assistant,
                         msg.clone(),
                     ));
-                    output_messages.push(RichText::new(format!("Agent: {}", msg)));
+                    conversation_update = Some(new_conversation);
                 }
                 agent::PayTypeError::EbmsError(msg) => {
                     output_messages.push(RichText::new(format!("EBMS: {}", msg)));
+                    conversation_update = None; // No conversation update on EBMS error
                 }
             }
-            conversation_update = Some(new_conversation);
         }
     }
 
