@@ -1,4 +1,5 @@
 use agent::{
+    ExecutionError,
     config::{AppConfig, load_config, save_config},
     conversation_message::{ConversationMessage, Role},
 };
@@ -276,25 +277,9 @@ async fn execute_prompt(
     let conversation_update: Option<Vec<ConversationMessage>>;
     let mut output_messages: Vec<RichText> = Vec::new();
     match result {
-        Ok(changes) => {
-            let mut new_conversation: Vec<ConversationMessage> = vec![];
-            for change in changes {
-                let change_text = change.to_string();
-                output_messages.push(RichText::new(change_text.clone()).strong());
-                if let Some(function_call) = change.function_call {
-                    new_conversation.push(ConversationMessage::new_function_call(
-                        function_call,
-                        change_text,
-                    ));
-                }
-            }
-
-            // On success, clear conversation restart with what actually happened - this allows the agent to know how to undo
-            conversation_update = Some(new_conversation);
-        }
-        Err(e) => {
-            match e {
-                agent::PayTypeError::GptError(msg) => {
+        Ok(success) => {
+            match success {
+                agent::ExecutionResult::Message(msg) => {
                     output_messages.push(RichText::new(format!("Agent: {}", msg)));
 
                     // On error, add user prompt to conversation
@@ -310,9 +295,32 @@ async fn execute_prompt(
                     ));
                     conversation_update = Some(new_conversation);
                 }
-                agent::PayTypeError::EbmsError(msg) => {
+                agent::ExecutionResult::Success(changes) => {
+                    let mut new_conversation: Vec<ConversationMessage> = vec![];
+                    for change in changes {
+                        let change_text = change.to_string();
+                        output_messages.push(RichText::new(change_text.clone()).strong());
+                        if let Some(function_call) = change.function_call {
+                            new_conversation.push(ConversationMessage::new_function_call(
+                                function_call,
+                                change_text,
+                            ));
+                        }
+                    }
+
+                    // On success, clear conversation restart with what actually happened - this allows the agent to know how to undo
+                    conversation_update = Some(new_conversation);
+                }
+            }
+        }
+        Err(e) => {
+            conversation_update = None; // No conversation update on error
+            match e {
+                ExecutionError::AgentError(msg) => {
+                    output_messages.push(RichText::new(format!("Agent Error: {}", msg)));
+                }
+                ExecutionError::EbmsError(msg) => {
                     output_messages.push(RichText::new(format!("EBMS: {}", msg)));
-                    conversation_update = None; // No conversation update on EBMS error
                 }
             }
         }

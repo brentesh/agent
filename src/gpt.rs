@@ -1,5 +1,5 @@
 use crate::{
-    PayType,
+    AgentResponse, PayType,
     conversation_message::{ConversationMessage, Role},
 };
 
@@ -31,7 +31,7 @@ pub struct GptChoice {
     pub message: GptMessage,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct GptMessage {
     pub function_call: Option<FunctionCall>,
     pub content: Option<String>,
@@ -41,7 +41,7 @@ pub async fn call_gpt(
     api_key: &str,
     prompt: &str,
     conversation: &Vec<ConversationMessage>,
-) -> Result<FunctionCall, Box<dyn std::error::Error>> {
+) -> Result<AgentResponse, Box<dyn std::error::Error>> {
     let client = Client::new();
     //this is important to let gpt know the context, otherwise it gets confused by "today", "wednesday", etc.
     let now = chrono::Local::now();
@@ -112,17 +112,13 @@ pub async fn call_gpt(
 
     let choice = response.choices.first();
     match choice {
-        Some(c) => {
-            let message = &c.message;
-            match &message.function_call {
-                Some(fc) => Ok(fc.clone()),
-                None => Err(message
-                    .content
-                    .clone()
-                    .unwrap_or_else(|| "No function call found in GPT response".into())
-                    .into()),
-            }
-        }
+        Some(c) => match &c.message.function_call {
+            Some(fc) => Ok(AgentResponse::FunctionCall(fc.clone())),
+            None => match &c.message.content {
+                Some(content) => Ok(AgentResponse::Message(content.clone())),
+                None => Err("No content or function call returned from GPT API".into()),
+            },
+        },
         None => Err("No choices returned from GPT API".into()),
     }
 }

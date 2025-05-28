@@ -90,8 +90,18 @@ impl PayTypeChange {
     }
 }
 
-pub enum PayTypeError {
-    GptError(String),
+pub enum AgentResponse {
+    FunctionCall(FunctionCall),
+    Message(String),
+}
+
+pub enum ExecutionResult {
+    Success(Vec<PayTypeChange>),
+    Message(String),
+}
+
+pub enum ExecutionError {
+    AgentError(String),
     EbmsError(String),
 }
 
@@ -99,20 +109,20 @@ pub async fn execute_prompt(
     config: &AppConfig,
     prompt: &str,
     conversation: &Vec<ConversationMessage>,
-) -> Result<Vec<PayTypeChange>, PayTypeError> {
+) -> Result<ExecutionResult, ExecutionError> {
     println!("{}", format!("Calling GPT with prompt: {}", prompt));
 
-    let gpt_result: Result<FunctionCall, Box<dyn std::error::Error>> =
-        gpt::call_gpt(&config.gpt_api_key, &prompt, conversation).await;
+    let gpt_result = gpt::call_gpt(&config.gpt_api_key, &prompt, conversation).await;
 
-    let function_call = match gpt_result {
-        Ok(result) => result,
-        Err(e) => return Err(PayTypeError::GptError(e.to_string())),
-    };
-
-    match handle_api_call(config, &function_call).await {
-        Ok(response) => Ok(response),
-        Err(e) => Err(PayTypeError::EbmsError(e.to_string())),
+    match gpt_result {
+        Err(e) => return Err(ExecutionError::AgentError(e.to_string())),
+        Ok(AgentResponse::Message(content)) => return Ok(ExecutionResult::Message(content)),
+        Ok(AgentResponse::FunctionCall(function_call)) => {
+            match handle_api_call(config, &function_call).await {
+                Ok(response) => Ok(ExecutionResult::Success(response)),
+                Err(e) => Err(ExecutionError::EbmsError(e)),
+            }
+        }
     }
 }
 
