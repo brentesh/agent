@@ -1,4 +1,4 @@
-use super::{AppConfig, PayType, PayTypeChange};
+use super::{AppConfig, FunctionCall, PayType, PayTypeChange};
 use chrono::NaiveDate;
 use serde::Deserialize;
 
@@ -31,6 +31,7 @@ pub async fn set_pay_type(
     config: &AppConfig,
     dates: &Vec<NaiveDate>,
     pay_type: &PayType,
+    function_call: &FunctionCall,
 ) -> Result<Vec<PayTypeChange>, Box<dyn std::error::Error>> {
     let pay_code = format_pay_code(pay_type);
     let pytmdets: Vec<PYTMDET> = get_pytmdets(config, dates).await?;
@@ -42,7 +43,7 @@ pub async fn set_pay_type(
         pytmdets.iter().filter(|d| d.pay_type != pay_code).collect();
 
     if pytmdets_to_change.is_empty() {
-        return Ok(output(dates, pay_type, &pytmdets));
+        return Ok(output(dates, pay_type, &pytmdets, None));
     }
 
     let autoids_to_change: Vec<String> = pytmdets_to_change
@@ -68,7 +69,12 @@ pub async fn set_pay_type(
         .await?;
 
     if res.status().is_success() {
-        Ok(output(&dates, &pay_type, &pytmdets))
+        Ok(output(
+            &dates,
+            &pay_type,
+            &pytmdets,
+            Some(function_call.clone()),
+        ))
     } else {
         let text = res.text().await?;
         Err(format!("Error setting pay type: {}", text).into())
@@ -79,9 +85,9 @@ fn output(
     dates: &Vec<NaiveDate>,
     pay_type: &PayType,
     pytmdets: &Vec<PYTMDET>,
+    function_call: Option<FunctionCall>,
 ) -> Vec<PayTypeChange> {
     let mut changes = Vec::new();
-    println!("Outputting for dates dates: {:?}", dates);
     for date in dates {
         if let Some(old) = pytmdets.iter().find_map(|d| {
             if d.get_date() == Some(*date) {
@@ -90,14 +96,11 @@ fn output(
                 None
             }
         }) {
-            println!(
-                "Found existing pay type for date {}: {}",
-                date, old.pay_type
-            );
             changes.push(PayTypeChange {
                 date: *date,
                 old_pay_type: old.pay_type.clone(),
                 pay_type: pay_type.clone(),
+                function_call: function_call.clone(),
             });
         }
     }

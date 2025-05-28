@@ -279,8 +279,15 @@ async fn execute_prompt(
         Ok(changes) => {
             let mut new_conversation: Vec<ConversationMessage> = vec![];
             for change in changes {
-                output_messages.push(RichText::new(format!("{}", change)).strong());
-                new_conversation.push(ConversationMessage::new(Role::Agent, change.to_string()));
+                let change_text = change.to_string();
+                output_messages.push(RichText::new(change_text.to_string()).strong());
+                if let Some(function_call) = change.function_call {
+                    new_conversation.push(ConversationMessage::new_content(
+                        Role::Assistant,
+                        change_text,
+                    ));
+                    new_conversation.push(ConversationMessage::new_function_call(function_call));
+                }
             }
 
             // On success, clear conversation restart with what actually happened - this allows the agent to know how to undo
@@ -291,12 +298,15 @@ async fn execute_prompt(
             let mut new_conversation = {
                 let lock = current_conversation.lock().unwrap();
                 let mut cloned = lock.clone();
-                cloned.push(ConversationMessage::new(Role::User, prompt.clone()));
+                cloned.push(ConversationMessage::new_content(Role::User, prompt.clone()));
                 cloned
             };
             match e {
                 agent::PayTypeError::GptError(msg) => {
-                    new_conversation.push(ConversationMessage::new(Role::Agent, msg.clone()));
+                    new_conversation.push(ConversationMessage::new_content(
+                        Role::Assistant,
+                        msg.clone(),
+                    ));
                     output_messages.push(RichText::new(format!("Agent: {}", msg)));
                 }
                 agent::PayTypeError::EbmsError(msg) => {
