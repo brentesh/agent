@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use api::format_pay_code;
 use chrono::Datelike;
 use config::AppConfig;
 use strum_macros::EnumIter;
@@ -58,7 +59,7 @@ impl Display for PayTypeChange {
         };
 
         let from = self.old_pay_type.to_string();
-        let to = self.pay_type.to_string();
+        let to = format_pay_code(&self.pay_type);
         if from == to {
             return write!(
                 f,

@@ -254,7 +254,7 @@ async fn execute_prompt(
             let mut new_conversation: Vec<ConversationMessage> = vec![];
             for change in changes {
                 output_messages.push(RichText::new(format!("{}", change)).strong());
-                new_conversation.push(ConversationMessage::new(Role::User, change.to_string()));
+                new_conversation.push(ConversationMessage::new(Role::Agent, change.to_string()));
             }
 
             // On success, clear conversation restart with what actually happened - this allows the agent to know how to undo

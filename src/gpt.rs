@@ -54,7 +54,7 @@ pub async fn call_gpt(
             "You are a helpful assistant that can set pay types for employees. \
              If no pay type is specified, use Salary by default. \
              Today's date is {}, the week begins on Sunday \
-             If the user asks you to undo a change and the record shows that they made a change, you should set it back to what you originally said it was.",
+             If the user asks you to undo a change and the record shows that you made a change, you should set it back to what you originally said it was.",
             today
         ),
     )];
