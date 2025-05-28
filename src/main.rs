@@ -178,9 +178,11 @@ impl AgentApp {
                     }
                 });
                 if *self.is_working.lock().unwrap() {
-                    ui.label(egui::RichText::new("Working...").italics());
+                    self.ellipses_animation(ctx, ui);
+                    ui.add_space(-20.0); // Add negative space to reduce vertical spacing
+                } else {
+                    ui.add_space(10.0);
                 }
-                ui.add_space(10.0);
                 if let Ok(output_lock) = self.output.lock() {
                     for rich_text in output_lock.iter().rev() {
                         ui.label(rich_text.clone());
@@ -238,6 +240,16 @@ impl AgentApp {
             *is_working = false;
         });
         self.prompt.clear();
+    }
+
+    fn ellipses_animation(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
+        let speed = 2.0;
+        let dots = match ((ctx.input(|i| i.time) * speed) as usize) % 3 {
+            0 => ".",
+            1 => "..",
+            _ => "...",
+        };
+        ui.label(RichText::new(dots).size(40.0));
     }
 }
 
