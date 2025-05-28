@@ -1,10 +1,10 @@
 use crate::{
     AgentResponse, PayType,
     conversation_message::{ConversationMessage, Role},
+    format_pay_code,
 };
 
 use super::FunctionCall;
-use crate::api::format_pay_code;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
@@ -50,10 +50,14 @@ pub async fn call_gpt(
     let mut full_conversation: Vec<ConversationMessage> = vec![ConversationMessage::new_content(
         Role::Assistant,
         format!(
-            "You are a helpful assistant that can set pay types for employees. \
-             If no pay type is specified, use Salary by default. \
-             Today's date is {}, the week begins on Sunday \
-             If the user asks you to undo a change and the record shows that you made a change, you should set it back to what you originally said it was.",
+            "You are a helpful assistant that can set pay types for employees or generate odata urls. \
+             In the case of pay types: if no pay type is specified, use Salary by default. \
+             Today's date is {}, the week begins on Sunday. \
+             If the user asks you to undo a pay type change and the record shows that you made a change, you should set it back to what you originally said it was. \
+             In the case of odata urls, only return the url beginning with the entity name (i.e. ARCUST?$filter=...) \
+             You can see a list of entities here: https://account.koblesystems.com/ebms/modules/api/entities. \
+             YOU MUST look up entity documentation to get the schema/field names right: https://account.koblesystems.com/ebms/modules/api/Entity?p=[entity name] where [entity name] is the name of the entity in the list. \
+             Unless the user specifies otherwise, never get more than 100 records from an odata url.",
             today
         ),
     )];
@@ -124,39 +128,56 @@ pub async fn call_gpt(
 }
 
 fn get_functions_metadata() -> Vec<serde_json::Value> {
-    vec![json!({
-        "name": "set_pay_type",
-        "description": "Set a pay type for a set of dates",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "dates": {
-                    "type": "array",
-                    "items": {
-                        "type": "string",
-                        "description": "A date to apply the pay type (format: YYYY-MM-DD)"
+    vec![
+        json!({
+            "name": "set_pay_type",
+            "description": "Set a pay type for a set of dates",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dates": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "description": "A date to apply the pay type (format: YYYY-MM-DD)"
+                        },
+                        "description": "The dates to apply the pay type (format: YYYY-MM-DD)",
+                        "minItems": 1
                     },
-                    "description": "The dates to apply the pay type (format: YYYY-MM-DD)",
-                    "minItems": 1
+                    "pay_type": {
+                        "type": "string",
+                        "enum": PayType::iter().map(|pt| pt.to_string()).collect::<Vec<_>>(),
+                        "description": &format!(
+                            "One of: {}. Salary by default. See this mapping for details: {}",
+                            PayType::iter()
+                                .map(|pt| pt.to_string())
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                            PayType::iter()
+                        .map(|pt| format!("{} is {}", &pt.to_string(), format_pay_code(&pt)))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                        )
+                    }
                 },
-                "pay_type": {
-                    "type": "string",
-                    "enum": PayType::iter().map(|pt| pt.to_string()).collect::<Vec<_>>(),
-                    "description": &format!(
-                        "One of: {}. Salary by default. See this mapping for details: {}",
-                        PayType::iter()
-                            .map(|pt| pt.to_string())
-                            .collect::<Vec<_>>()
-                            .join(", "),
-                        PayType::iter()
-                    .map(|pt| format!("{} is {}", &pt.to_string(), format_pay_code(&pt)))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-                    )
-                }
-            },
-            "required": ["dates", "pay_type"],
-            "additionalProperties": false
-        }
-    })]
+                "required": ["dates", "pay_type"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "get_odata_url",
+            "description": "Get an odata url",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "an odata url to fetch data from",
+                    }
+                },
+                "required": ["url"],
+                "additionalProperties": false
+            }
+        }),
+    ]
 }

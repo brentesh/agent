@@ -1,6 +1,3 @@
-use std::fmt::Display;
-
-use api::format_pay_code;
 use chrono::Datelike;
 use config::AppConfig;
 use conversation_message::{ConversationMessage, FunctionCall};
@@ -45,11 +42,14 @@ pub struct PayTypeChange {
     pub date: chrono::NaiveDate,
     pub old_pay_type: String,
     pub pay_type: PayType,
-    pub function_call: Option<FunctionCall>,
 }
 
-impl Display for PayTypeChange {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+pub struct DataResponse {
+    pub content: String,
+}
+
+impl PayTypeChange {
+    pub fn to_string(&self) -> String {
         let now = chrono::Local::now().naive_local().date();
         let formatted_date = if self.date.year() == now.year() {
             format!("{}", self.date.format("%a %B %d"))
@@ -60,33 +60,25 @@ impl Display for PayTypeChange {
         let from = self.old_pay_type.to_string();
         let to = format_pay_code(&self.pay_type);
         if from == to {
-            return write!(
-                f,
+            return format!(
                 "Pay type for {} was already set to {}",
                 formatted_date, from
             );
         }
-        write!(
-            f,
+        format!(
             "Set pay type for {} from {} to {}",
             formatted_date, from, to,
         )
     }
 }
 
-impl PayTypeChange {
-    pub fn get_function_call(&self) -> Option<String> {
-        let from = self.old_pay_type.to_string();
-        let to = format_pay_code(&self.pay_type);
-        if from == to {
-            return None;
-        }
-        return Some(format!(
-            "I set the pay type for {} from {} to {}",
-            self.date.format("%a %B %d, %Y"),
-            from,
-            to,
-        ));
+pub fn format_pay_code(pay_type: &PayType) -> &'static str {
+    match pay_type {
+        PayType::Sick => "Sick-Sal",
+        PayType::Vacation => "Vac-SAL",
+        PayType::Holiday => "Hol-SAL",
+        PayType::Salary => "Salary",
+        PayType::Parental => "Par-SAL",
     }
 }
 
@@ -96,8 +88,13 @@ pub enum AgentResponse {
 }
 
 pub enum ExecutionResult {
-    Success(Vec<PayTypeChange>),
+    Success(ExecutionSuccess),
     Message(String),
+}
+
+pub struct ExecutionSuccess {
+    pub content: String,
+    pub function_call: FunctionCall,
 }
 
 pub enum ExecutionError {
@@ -118,19 +115,46 @@ pub async fn execute_prompt(
         Err(e) => return Err(ExecutionError::AgentError(e.to_string())),
         Ok(AgentResponse::Message(content)) => return Ok(ExecutionResult::Message(content)),
         Ok(AgentResponse::FunctionCall(function_call)) => {
-            match handle_api_call(config, &function_call).await {
-                Ok(response) => Ok(ExecutionResult::Success(response)),
+            match handle_function(config, &function_call).await {
+                Ok(response) => Ok(ExecutionResult::Success(ExecutionSuccess {
+                    content: response,
+                    function_call: function_call,
+                })),
                 Err(e) => Err(ExecutionError::EbmsError(e)),
             }
         }
     }
 }
 
-async fn handle_api_call(
+async fn handle_function(
     config: &AppConfig,
     function_call: &FunctionCall,
+) -> Result<String, String> {
+    match function_call.name.as_str() {
+        "set_pay_type" => {
+            if function_call.arguments.is_empty() {
+                return Err("Function call 'set_pay_type' requires arguments".to_string());
+            }
+            Ok(handle_pay_type_function(config, &function_call.arguments)
+                .await
+                .map(|changes| {
+                    changes
+                        .iter()
+                        .map(|change| change.to_string())
+                        .collect::<Vec<String>>()
+                        .join("\n")
+                })?)
+        }
+        "get_odata_url" => Ok(handle_odata_url_function(config, &function_call.arguments).await?),
+        _ => Err(format!("Unknown function call: {}", function_call.name)),
+    }
+}
+
+async fn handle_pay_type_function(
+    config: &AppConfig,
+    args: &str,
 ) -> Result<Vec<PayTypeChange>, String> {
-    let args: serde_json::Value = serde_json::from_str(&function_call.arguments)
+    let args: serde_json::Value = serde_json::from_str(&args)
         .map_err(|e| format!("Failed to parse function call arguments: {}", e))?;
 
     let date_values = args["dates"]
@@ -156,9 +180,22 @@ async fn handle_api_call(
 
     println!("Setting pay type '{}' for dates {:?}", pay_type_str, dates);
     // Serialize the GPT function call to a JSON string for logging or debugging
-    let result = api::set_pay_type(config, &dates, &pay_type, &function_call)
+    let result = api::set_pay_type::set_pay_type(config, &dates, &pay_type)
         .await
         .map_err(|e| e.to_string())?;
 
     Ok(result)
+}
+
+async fn handle_odata_url_function(_config: &AppConfig, args: &str) -> Result<String, String> {
+    let args: serde_json::Value = serde_json::from_str(&args)
+        .map_err(|e| format!("Failed to parse function call arguments: {}", e))?;
+    let url = args["url"]
+        .as_str()
+        .ok_or_else(|| "Missing url field".to_string())?;
+
+    let response = api::get_odata_content::get_odata_content(_config, &url)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(response.content)
 }

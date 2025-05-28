@@ -185,9 +185,14 @@ impl AgentApp {
                     ui.add_space(10.0);
                 }
                 if let Ok(output_lock) = self.output.lock() {
-                    for rich_text in output_lock.iter().rev() {
-                        ui.label(rich_text.clone());
-                    }
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false; 2])
+                        .stick_to_bottom(true)
+                        .show(ui, |ui| {
+                            for rich_text in output_lock.iter().rev() {
+                                ui.label(rich_text.clone());
+                            }
+                        });
                 }
             });
 
@@ -295,20 +300,14 @@ async fn execute_prompt(
                     ));
                     conversation_update = Some(new_conversation);
                 }
-                agent::ExecutionResult::Success(changes) => {
-                    let mut new_conversation: Vec<ConversationMessage> = vec![];
-                    for change in changes {
-                        let change_text = change.to_string();
-                        output_messages.push(RichText::new(change_text.clone()).strong());
-                        if let Some(function_call) = change.function_call {
-                            new_conversation.push(ConversationMessage::new_function_call(
-                                function_call,
-                                change_text,
-                            ));
-                        }
-                    }
+                agent::ExecutionResult::Success(success) => {
+                    output_messages.push(RichText::new(success.content.clone()).strong());
 
-                    // On success, clear conversation restart with what actually happened - this allows the agent to know how to undo
+                    // On success, clear conversation and restart with what actually happened - this allows the agent to know how to undo
+                    let new_conversation = vec![ConversationMessage::new_function_call(
+                        success.function_call.clone(),
+                        success.content.clone(),
+                    )];
                     conversation_update = Some(new_conversation);
                 }
             }
