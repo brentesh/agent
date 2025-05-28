@@ -160,7 +160,7 @@ async fn get_pytmdets(
 
 pub fn format_pay_code(pay_type: &PayType) -> &'static str {
     match pay_type {
-        PayType::Sick => "Vac-SAL",
+        PayType::Sick => "Sick-Sal",
         PayType::Vacation => "Vac-SAL",
         PayType::Holiday => "Hol-SAL",
         PayType::Salary => "Salary",
