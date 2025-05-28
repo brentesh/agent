@@ -22,19 +22,19 @@ impl Role {
 
 //these classes represent the structure of the GPT API response and are just here for deserialization
 #[derive(Debug, Deserialize)]
-pub struct GptApiResponse {
-    pub choices: Vec<GptChoice>,
+struct GptApiResponse {
+    choices: Vec<GptChoice>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct GptChoice {
-    pub message: GptMessage,
+struct GptChoice {
+    message: GptMessage,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct GptMessage {
-    pub function_call: Option<FunctionCall>,
-    pub content: Option<String>,
+#[derive(Debug, Deserialize)]
+struct GptMessage {
+    function_call: Option<FunctionCall>,
+    content: Option<String>,
 }
 
 pub async fn call_gpt(
