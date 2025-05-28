@@ -179,7 +179,7 @@ impl AgentApp {
                 });
                 if *self.is_working.lock().unwrap() {
                     self.ellipses_animation(ctx, ui);
-                    ui.add_space(-20.0); // Add negative space to reduce vertical spacing
+                    ui.add_space(-25.0); // Add negative space to reduce vertical spacing
                 } else {
                     ui.add_space(10.0);
                 }
