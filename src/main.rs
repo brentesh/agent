@@ -1,6 +1,6 @@
 use agent::{
-    ConversationMessage, Role,
     config::{AppConfig, load_config, save_config},
+    conversation_message::{ConversationMessage, Role},
 };
 use eframe::egui::{self, Id, RichText};
 use std::sync::{Arc, Mutex};

@@ -1,6 +1,9 @@
-use crate::PayType;
+use crate::{
+    PayType,
+    conversation_message::{ConversationMessage, Role},
+};
 
-use super::{ConversationMessage, FunctionCall, Role};
+use super::FunctionCall;
 use crate::api::format_pay_code;
 use reqwest::Client;
 use serde::Deserialize;

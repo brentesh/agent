@@ -3,11 +3,12 @@ use std::fmt::Display;
 use api::format_pay_code;
 use chrono::Datelike;
 use config::AppConfig;
-use serde::Deserialize;
+use conversation_message::{ConversationMessage, FunctionCall};
 use strum_macros::EnumIter;
 
 mod api;
 pub mod config;
+pub mod conversation_message;
 mod gpt;
 
 #[derive(EnumIter, Debug, Clone)]
@@ -92,43 +93,6 @@ impl PayTypeChange {
 pub enum PayTypeError {
     GptError(String),
     EbmsError(String),
-}
-
-#[derive(Clone)]
-pub enum Role {
-    User,
-    System,
-    Assistant,
-}
-
-#[derive(Clone)]
-pub struct ConversationMessage {
-    role: Role,
-    content: Option<String>,
-    function_call: Option<FunctionCall>,
-}
-
-impl ConversationMessage {
-    pub fn new_content(role: Role, content: String) -> Self {
-        Self {
-            role,
-            content: Some(content),
-            function_call: None,
-        }
-    }
-    pub fn new_function_call(function_call: FunctionCall) -> Self {
-        Self {
-            role: Role::Assistant,
-            content: None,
-            function_call: Some(function_call),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct FunctionCall {
-    pub name: String,
-    pub arguments: String,
 }
 
 pub async fn execute_prompt(
