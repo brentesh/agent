@@ -40,23 +40,39 @@ impl ToString for PayType {
 
 pub struct PayTypeChange {
     pub date: chrono::NaiveDate,
+    pub old_pay_type: String,
     pub pay_type: PayType,
 }
 
 impl Display for PayTypeChange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let now = chrono::Local::now().naive_local().date();
+        let formatted_dates = if let Some(date) = self.date.into() {
+            if date.year() == now.year() {
+                vec![format!("{}", date.format("%a %B %d"))]
+            } else {
+                vec![format!("{}", date.format("%a %B %d, %Y"))]
+            }
+        } else {
+            vec![]
+        };
+
+        let from = self.old_pay_type.to_string();
+        let to = self.pay_type.to_string();
+        if from == to {
+            return write!(
+                f,
+                "Pay type for {} was already set to {}",
+                formatted_dates.join(", "),
+                from
+            );
+        }
         write!(
             f,
-            "Set pay type for {} to {}",
-            {
-                let now = chrono::Local::now().naive_local().date();
-                if self.date.year() == now.year() {
-                    format!("{}", self.date.format("%a %B %d"))
-                } else {
-                    format!("{}", self.date.format("%a %B %d, %Y"))
-                }
-            },
-            self.pay_type.to_string(),
+            "Set pay type for {} from {} to {}",
+            formatted_dates.join(", "),
+            from,
+            to,
         )
     }
 }
@@ -88,7 +104,7 @@ pub async fn execute_prompt(
     config: &AppConfig,
     prompt: &str,
     conversation: &Option<Vec<ConversationMessage>>,
-) -> Result<PayTypeChange, PayTypeError> {
+) -> Result<Vec<PayTypeChange>, PayTypeError> {
     println!("{}", format!("Calling GPT with prompt: {}", prompt));
 
     let gpt_result: Result<gpt::GptFunctionCall, Box<dyn std::error::Error>> =
@@ -108,7 +124,7 @@ pub async fn execute_prompt(
 async fn handle_api_call(
     config: &AppConfig,
     function_call_arguments: &str,
-) -> Result<PayTypeChange, String> {
+) -> Result<Vec<PayTypeChange>, String> {
     println!(
         "{}",
         format!("handle api call: {}", &function_call_arguments)
@@ -117,11 +133,19 @@ async fn handle_api_call(
     let args: serde_json::Value = serde_json::from_str(function_call_arguments)
         .map_err(|e| format!("Failed to parse function call arguments: {}", e))?;
 
-    let date_str = args["date"]
-        .as_str()
-        .ok_or_else(|| "Missing date field".to_string())?;
-    let date = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-        .map_err(|e| format!("Invalid date format, expected YYYY-MM-DD: {}", e))?;
+    let date_values = args["dates"]
+        .as_array()
+        .ok_or_else(|| "Missing or invalid 'dates' field, expected array".to_string())?;
+
+    let mut dates = Vec::new();
+    for date_val in date_values {
+        let date_str = date_val
+            .as_str()
+            .ok_or_else(|| "Invalid date value in 'dates' array".to_string())?;
+        let date = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+            .map_err(|e| format!("Invalid date format, expected YYYY-MM-DD: {}", e))?;
+        dates.push(date);
+    }
 
     let pay_type_str = args["pay_type"]
         .as_str()
@@ -130,13 +154,10 @@ async fn handle_api_call(
         .parse::<PayType>()
         .map_err(|_| format!("Invalid pay type returned from agent: {}", pay_type_str))?;
 
-    println!("Setting pay type '{}' for date {}", pay_type_str, date);
-    api::set_pay_type(config, &date, &pay_type)
+    println!("Setting pay type '{}' for dates {:?}", pay_type_str, dates);
+    let result = api::set_pay_type(config, &dates, &pay_type)
         .await
         .map_err(|e| e.to_string())?;
 
-    Ok(PayTypeChange {
-        date: date,
-        pay_type: pay_type,
-    })
+    Ok(result)
 }

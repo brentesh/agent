@@ -1,6 +1,7 @@
 use crate::PayType;
 
 use super::{ConversationMessage, Role};
+use crate::api::format_pay_code;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
@@ -51,8 +52,9 @@ pub async fn call_gpt(
         Role::Agent,
         format!(
             "You are a helpful assistant that can set pay types for employees. \
-             If no pay type is specified, use Salary by default.
-             Today's date is {}",
+             If no pay type is specified, use Salary by default. \
+             Today's date is {}, the week begins on Sunday \
+             If the user asks you to undo a change and the record shows that they made a change, you should set it back to what you originally said it was.",
             today
         ),
     )];
@@ -114,21 +116,37 @@ pub async fn call_gpt(
 fn get_functions_metadata() -> Vec<serde_json::Value> {
     vec![json!({
         "name": "set_pay_type",
-        "description": "Set a pay type for a specific date",
+        "description": "Set a pay type for a set of dates",
         "parameters": {
             "type": "object",
             "properties": {
-                "date": {
-                    "type": "string",
-                    "description": "The date to apply the pay type (format: YYYY-MM-DD)"
+                "dates": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "description": "A date to apply the pay type (format: YYYY-MM-DD)"
+                    },
+                    "description": "The dates to apply the pay type (format: YYYY-MM-DD)",
+                    "minItems": 1
                 },
                 "pay_type": {
                     "type": "string",
                     "enum": PayType::iter().map(|pt| pt.to_string()).collect::<Vec<_>>(),
-                    "description": "One of: Sick, Vacation, Holiday, Parental, or Salary, Salary by default"
+                    "description": &format!(
+                        "One of: {}. Salary by default. See this mapping for details: {}",
+                        PayType::iter()
+                            .map(|pt| pt.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        PayType::iter()
+                    .map(|pt| format!("{} is {}", &pt.to_string(), format_pay_code(&pt)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+                    )
                 }
             },
-            "required": ["date", "pay_type"]
+            "required": ["dates", "pay_type"],
+            "additionalProperties": false
         }
     })]
 }

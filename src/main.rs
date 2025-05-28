@@ -248,12 +248,17 @@ async fn execute_prompt(
     let result = agent::execute_prompt(&config, &prompt, &conversation).await;
 
     let conversation_update: Option<Vec<ConversationMessage>>;
-    let output_update: Option<RichText>;
+    let mut output_messages: Vec<RichText> = Vec::new();
     match result {
-        Ok(pay_type_change) => {
-            // On success, clear conversation and push output
-            conversation_update = Some(Vec::new());
-            output_update = Some(RichText::new(format!("{}", pay_type_change)).strong());
+        Ok(changes) => {
+            let mut new_conversation: Vec<ConversationMessage> = vec![];
+            for change in changes {
+                output_messages.push(RichText::new(format!("{}", change)).strong());
+                new_conversation.push(ConversationMessage::new(Role::User, change.to_string()));
+            }
+
+            // On success, clear conversation restart with what actually happened - this allows the agent to know how to undo
+            conversation_update = Some(new_conversation);
         }
         Err(e) => {
             // On error, add user prompt to conversation
@@ -266,10 +271,10 @@ async fn execute_prompt(
             match e {
                 agent::PayTypeError::GptError(msg) => {
                     new_conversation.push(ConversationMessage::new(Role::Agent, msg.clone()));
-                    output_update = Some(RichText::new(format!("Agent: {}", msg)));
+                    output_messages.push(RichText::new(format!("Agent: {}", msg)));
                 }
                 agent::PayTypeError::EbmsError(msg) => {
-                    output_update = Some(RichText::new(format!("EBMS: {}", msg)));
+                    output_messages.push(RichText::new(format!("EBMS: {}", msg)));
                 }
             }
             conversation_update = Some(new_conversation);
@@ -281,8 +286,12 @@ async fn execute_prompt(
         let mut conversation_lock = current_conversation.lock().unwrap();
         *conversation_lock = new_conversation;
     }
-    if let Some(new_output) = output_update {
+
+    if !output_messages.is_empty() {
         let mut output_lock = output.lock().unwrap();
-        output_lock.push(new_output);
+        for new_output in output_messages {
+            // Lock the output and push the new output
+            output_lock.push(new_output);
+        }
     }
 }
