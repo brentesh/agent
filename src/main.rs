@@ -146,48 +146,57 @@ impl AgentApp {
 
     fn draw_main_ui(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                let id = Id::new("my_input_box");
-
-                if !self.focused {
-                    ctx.memory_mut(|mem| mem.request_focus(id));
-                    self.focused = true;
+            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
+                ui.add_space(10.0); // Adds a bit of margin to the bottom
+                ui.horizontal(|ui| {
+                    let id = Id::new("my_input_box");
+                    if !self.focused {
+                        ctx.memory_mut(|mem| mem.request_focus(id));
+                        self.focused = true;
+                    }
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.prompt)
+                            .hint_text("Type your prompt here...")
+                            .id(id)
+                            .font(egui::TextStyle::Heading)
+                            .desired_width(350.0),
+                    );
+                    let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    // Add a button next to the input box
+                    if ui
+                        .add_sized(
+                            [30.0, 25.0], // width, height (height matches TextEdit)
+                            egui::Button::new(
+                                egui::RichText::new(">").text_style(egui::TextStyle::Heading),
+                            ),
+                        )
+                        .clicked()
+                        || enter_pressed
+                    {
+                        ctx.memory_mut(|mem| mem.request_focus(id));
+                        self.button_clicked();
+                    }
+                });
+                if *self.is_working.lock().unwrap() {
+                    ui.label(egui::RichText::new("Working...").italics());
                 }
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.prompt)
-                        .hint_text("Type your prompt here...")
-                        .id(id)
-                        .font(egui::TextStyle::Heading)
-                        .desired_width(400.0)
-                        .margin(egui::Vec2::splat(8.0)),
-                );
-                let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
-                // Add a button next to the input box
-                if ui
-                    .add_sized(
-                        [38.0, 38.0], // width, height (height matches TextEdit)
-                        egui::Button::new(
-                            egui::RichText::new(">").text_style(egui::TextStyle::Heading),
-                        ),
-                    )
-                    .clicked()
-                    || enter_pressed
-                {
-                    ctx.memory_mut(|mem| mem.request_focus(id));
-                    self.button_clicked(&ctx);
+                ui.add_space(10.0);
+                if let Ok(output_lock) = self.output.lock() {
+                    for rich_text in output_lock.iter().rev() {
+                        ui.label(rich_text.clone());
+                    }
                 }
             });
-            ui.add_space(16.0);
-            if *self.is_working.lock().unwrap() {
-                ui.label(egui::RichText::new("Working...").italics());
-            }
-            if let Ok(output_lock) = self.output.lock() {
-                for rich_text in output_lock.iter().rev() {
-                    ui.label(rich_text.clone());
-                }
-            }
+
             ui.with_layout(egui::Layout::bottom_up(egui::Align::RIGHT), |ui| {
-                if ui.button("Log Out").clicked() {
+                ui.add_space(6.0); // Adds a bit of margin to the bottom
+                if ui
+                    .add_sized(
+                        [60.0, 25.0], // width, height (height matches button above)
+                        egui::Button::new(egui::RichText::new("Log Out")),
+                    )
+                    .clicked()
+                {
                     self.log_out();
                 }
             });
@@ -203,7 +212,7 @@ impl AgentApp {
         save_config(&self.config);
     }
 
-    fn button_clicked(&mut self, ctx: &egui::Context) {
+    fn button_clicked(&mut self) {
         let prompt = self.prompt.clone();
         // Spawn the async task in a background thread
         let config: AppConfig = self.config.clone();
