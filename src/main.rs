@@ -280,13 +280,12 @@ async fn execute_prompt(
             let mut new_conversation: Vec<ConversationMessage> = vec![];
             for change in changes {
                 let change_text = change.to_string();
-                output_messages.push(RichText::new(change_text.to_string()).strong());
+                output_messages.push(RichText::new(change_text.clone()).strong());
                 if let Some(function_call) = change.function_call {
-                    new_conversation.push(ConversationMessage::new_content(
-                        Role::Assistant,
+                    new_conversation.push(ConversationMessage::new_function_call(
+                        function_call,
                         change_text,
                     ));
-                    new_conversation.push(ConversationMessage::new_function_call(function_call));
                 }
             }
 

@@ -10,7 +10,7 @@ pub enum Role {
 #[derive(Clone)]
 pub struct ConversationMessage {
     pub role: Role,
-    pub content: Option<String>,
+    pub content: String,
     pub function_call: Option<FunctionCall>,
 }
 
@@ -18,14 +18,14 @@ impl ConversationMessage {
     pub fn new_content(role: Role, content: String) -> Self {
         Self {
             role,
-            content: Some(content),
+            content: content.to_string(),
             function_call: None,
         }
     }
-    pub fn new_function_call(function_call: FunctionCall) -> Self {
+    pub fn new_function_call(function_call: FunctionCall, content: String) -> Self {
         Self {
             role: Role::Assistant,
-            content: None,
+            content: content.to_string(),
             function_call: Some(function_call),
         }
     }
